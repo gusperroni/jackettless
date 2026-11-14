@@ -1,4 +1,4 @@
-# VERSION: 1.00
+# VERSION: 1.01
 # AUTHORS: gusperroni (https://github.com/gusperroni/jackettless)
 
 # LICENSING INFORMATION
@@ -2958,7 +2958,7 @@ class DefinitionStore:
                 pass
             todo.append(ident)
         if todo:
-            log('downloading %d definition(s) from Jackett/%s', len(todo), self.ref, debug=len(todo) < 5)
+            log('downloading %d definition(s) from Jackett/%s', len(todo), self.ref, debug=True)
             with ThreadPoolExecutor(max_workers=workers) as ex:
                 for ident, fut in [(i, ex.submit(self._download, i)) for i in todo]:
                     try:
@@ -4014,7 +4014,7 @@ class CardigannIndexer:
                         raise IndexerError('infohash selectors did not match')
                     return 'magnet', public_magnet(h, t)
                 except Exception as e:  # noqa: BLE001
-                    log('%s: infohash block failed: %s', self.id, e)
+                    log('%s: infohash block failed: %s', self.id, e, debug=True)
             elif dl.get('selectors'):
                 found = None
                 for sel in as_list(dl['selectors']):
@@ -4068,7 +4068,7 @@ def load_config(path=CONFIG_FILE):
         try:
             with open(path, 'w', encoding='utf-8') as f:
                 json.dump(DEFAULT_CONFIG, f, indent=4)
-            log('created default configuration at %s', path)
+            log('created default configuration at %s', path, debug=True)
         except OSError as e:
             log('could not write %s: %s', path, e)
         return cfg
@@ -4404,7 +4404,7 @@ def run_search(what, cat='all', printer=prettyPrinter, cfg=None, data_dir=DATA_D
         if reason:
             reasons[ident] = reason
         if isinstance(outcome, str):
-            log('%s: %s', ident, outcome)
+            log('%s: %s', ident, outcome, debug=True)
         else:
             log('%s: %d result(s)', ident, outcome, debug=True)
 
@@ -4425,6 +4425,9 @@ def run_search(what, cat='all', printer=prettyPrinter, cfg=None, data_dir=DATA_D
         merger.finish()
         log('dedup: %d duplicate(s) merged, %d late duplicate(s) dropped', merger.merged, merger.dropped,
             debug=True)
+    if reasons:  # one line per search: qBittorrent logs every stderr line as a warning
+        log('%d of %d indexers failed: %s', len(reasons), len(ids),
+            ', '.join('%s (%s)' % (i, reasons[i]) for i in sorted(reasons)))
     _report_errors(str(cfg.get('report_errors') or 'none').lower(), reasons, len(ids), printer, what)
     return summary
 

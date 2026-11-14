@@ -590,6 +590,25 @@ class OptionTests(FakeTrackerCase):
         for value in (res['link'], res['desc_link']):
             self.assertNotRegex(value, r'[\r\n|\x00-\x1f ]')
 
+    def capture_stderr(self, fn):
+        import contextlib
+        import io
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            fn()
+        return [line for line in buf.getvalue().splitlines() if line.strip()]
+
+    def test_successful_search_and_first_run_are_silent(self):
+        # qBittorrent logs every stderr line as "Error occurred in search engine"
+        lines = self.capture_stderr(lambda: (
+            jl.load_config(os.path.join(self.tmp, 'fresh.json')),
+            jl.run_search('ubuntu', 'all', lambda r: None, self.cfg(), self.tmp)))
+        self.assertEqual(lines, [])
+
+    def test_failures_are_one_stderr_line(self):
+        lines = self.capture_stderr(lambda: jl.run_search('ubuntu', 'all', lambda r: None, self.cfg('wrong'), self.tmp))
+        self.assertEqual(lines, ['[jackettless] 1 of 1 indexers failed: faketracker (Error: Bad password)'])
+
     def test_invalid_indexer_id_is_rejected(self):
         for bad in ('../evil', '..\\evil', 'a/b', '', '.hidden'):
             with self.assertRaises(jl.IndexerError):

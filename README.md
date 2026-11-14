@@ -124,7 +124,7 @@ its configuration screen. Examples are `sort`, `type` and `freeleech`.
 | `dns_over_https` | `null` | e.g. `"https://1.1.1.1/dns-query"`. See [Blocked by your provider's DNS](#blocked-by-your-providers-dns). |
 | `refresh_days` | `1` | How often to check for updated definitions, in days. |
 | `definitions_ref` | `"master"` | Jackett branch, tag or commit to download definitions from. |
-| `verbose` | `false` | Detailed log output, useful when running from the command line. |
+| `verbose` | `false` | Detailed log output, useful when running from the command line. Without it, only real problems reach qBittorrent's log. |
 
 ## Private trackers
 
@@ -259,6 +259,7 @@ accepted when their fingerprint is listed in the indexer's definition, as Jacket
 | symptom | what to do |
 |---|---|
 | No results at all | Set `"report_errors": "summary"` and search again to see which indexers fail and why. |
+| qBittorrent's log (View → Log) shows `Error occurred in search engine ... [jackettless] 2 of 8 indexers failed: ...` | qBittorrent logs any message from a plugin as a warning, even when the search worked. jackettless writes one such line per search, only when indexers fail; the reason of each one is in parentheses. |
 | `Cloudflare` | The site requires a browser check. See [Sites protected by Cloudflare](#sites-protected-by-cloudflare). |
 | `DNS blocked/failed` | See [Blocked by your provider's DNS](#blocked-by-your-providers-dns). |
 | `timeout` | The site is slow or down. Increase `indexer_timeout`, or try again later. |
