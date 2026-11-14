@@ -1,4 +1,4 @@
-# jackettless
+# <img src="icon-128.png" alt="" width="40" align="top"> jackettless
 
 **Search hundreds of torrent sites from qBittorrent, using Jackett's indexer definitions, without running a Jackett
 server.**
