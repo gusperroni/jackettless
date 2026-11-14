@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Runtime files created next to the plugin (may contain credentials and cookies)
+/jackettless.json
+/jackettless_data/
+
+# Local notes and reports
+/notes/
+*.coverage.json

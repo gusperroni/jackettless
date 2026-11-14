@@ -1,0 +1,38 @@
+{
+    "indexers": {
+        "thepiratebay": {},
+        "therarbg": {},
+        "limetorrents": {},
+        "yts": {},
+        "nyaasi": {},
+        "torrentdownload": {},
+        "torrentproject2": {},
+
+        "torrentleech": {
+            "enabled": false,
+            "username": "YOUR_USERNAME",
+            "password": "YOUR_PASSWORD"
+        },
+        "bjshare": {
+            "enabled": false,
+            "cookie": "PASTE_THE_COOKIE_HEADER_FROM_YOUR_BROWSER"
+        },
+        "1337x": {
+            "enabled": false,
+            "cookie": "cf_clearance=PASTE_FROM_YOUR_BROWSER",
+            "user_agent": "PASTE_THE_EXACT_USER_AGENT_OF_THAT_BROWSER"
+        }
+    },
+    "all_public": false,
+    "thread_count": 10,
+    "timeout": 20,
+    "indexer_timeout": 60,
+    "tracker_first": true,
+    "definitions_ref": "master",
+    "refresh_days": 1,
+    "dns_over_https": null,
+    "report_errors": "summary",
+    "dedup": "merge",
+    "dedup_wait": 8,
+    "verbose": false
+}
