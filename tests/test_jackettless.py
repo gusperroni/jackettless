@@ -365,7 +365,7 @@ class FakeTrackerCase(unittest.TestCase):
     def cfg(self, password='pa ss&'):
         return {'indexers': {'faketracker': {'username': 'user', 'password': password}}, 'thread_count': 2,
                 'timeout': 5, 'indexer_timeout': 20, 'tracker_first': True, 'definitions_ref': 'master',
-                'refresh_days': 7}
+                'refresh_days': 7, 'all_public': False, 'backoff': False}
 
 
 class EndToEndTests(FakeTrackerCase):
@@ -532,14 +532,128 @@ class MergerTests(unittest.TestCase):
         self.assertEqual(self.m.dropped, 1)
 
 
+class AllPublicTests(FakeTrackerCase):
+    """all_public by default: the indexer list fills itself, old defaults migrate, failing indexers pause."""
+
+    def setUp(self):
+        super().setUp()
+        for ident, name in (('pubone', 'Pub One'), ('pubtwo', 'Pub Two')):
+            with open(os.path.join(self.tmp, 'custom', ident + '.yml'), 'w', encoding='utf-8') as f:
+                f.write(MAGNET_DEFINITION.format(ident=ident, name=name, port=self.port))
+        # a non-empty, fresh index: the store must not go to GitHub during tests
+        with open(os.path.join(self.tmp, 'definitions_index.json'), 'w') as f:
+            json.dump({'ref': 'master', 'updated': time.time(), 'files': {'pubone': '-'}}, f)
+        self.path = os.path.join(self.tmp, 'jackettless.json')
+
+    def write(self, data):
+        with open(self.path, 'w', encoding='utf-8') as f:
+            json.dump(data, f)
+
+    def read(self):
+        with open(self.path, encoding='utf-8') as f:
+            return json.load(f)
+
+    def test_public_indexers_are_added_and_user_choices_kept(self):
+        self.write({'indexers': {'pubone': {'enabled': False}}, 'all_public': True, 'timeout': 5,
+                    'backoff': False, 'dedup': 'off'})
+        cfg = jl.load_config(self.path)
+        rows = []
+        summary = jl.run_search('x', 'all', rows.append, cfg, self.tmp)
+        written = self.read()
+        self.assertEqual(written['indexers'], {'pubone': {'enabled': False}, 'pubtwo': {'enabled': True}})
+        self.assertNotIn('faketracker', written['indexers'])  # private: never added automatically
+        # the rest of the file is untouched: same keys, same values, no defaults merged in
+        self.assertEqual(set(written), {'indexers', 'all_public', 'timeout', 'backoff', 'dedup'})
+        self.assertEqual(written['timeout'], 5)
+        self.assertEqual(list(summary), ['pubtwo'])  # the disabled one is not searched
+
+    def test_invalid_file_is_never_rewritten(self):
+        with open(self.path, 'w', encoding='utf-8') as f:
+            f.write('{"all_public": true,,}')
+        cfg = jl.load_config(self.path)
+        cfg['backoff'] = False
+        jl.run_search('x', 'all', lambda r: None, cfg, self.tmp)
+        with open(self.path, encoding='utf-8') as f:
+            self.assertEqual(f.read(), '{"all_public": true,,}')
+
+    def test_untouched_old_default_is_migrated(self):
+        self.write(jl._OLD_DEFAULTS[0])  # noqa: SLF001
+        cfg = jl.load_config(self.path)
+        self.assertIs(cfg['all_public'], True)
+        self.assertEqual(self.read(), jl.DEFAULT_CONFIG)
+
+    def test_edited_old_config_is_kept(self):
+        edited = json.loads(json.dumps(jl._OLD_DEFAULTS[0]))  # noqa: SLF001
+        edited['dns_over_https'] = 'https://1.1.1.1/dns-query'
+        self.write(edited)
+        cfg = jl.load_config(self.path)
+        self.assertIs(cfg['all_public'], False)
+        self.assertEqual(self.read(), edited)
+
+    def test_backoff_grows_and_resets(self):
+        now = 1000000.0
+        self.assertEqual(jl.record_health(self.tmp, {'a': 'timeout'}, now), [])
+        self.assertEqual(jl.paused_indexers(self.tmp, ['a'], now), [])
+        self.assertEqual(jl.record_health(self.tmp, {'a': 'timeout'}, now), ['a'])
+        self.assertEqual(jl.paused_indexers(self.tmp, ['a', 'b'], now + 3599), ['a'])
+        self.assertEqual(jl.paused_indexers(self.tmp, ['a'], now + 3601), [])
+        jl.record_health(self.tmp, {'a': 'Cloudflare'}, now)
+        self.assertEqual(jl.paused_indexers(self.tmp, ['a'], now + 6 * 3600 - 1), ['a'])
+        for _ in range(5):
+            jl.record_health(self.tmp, {'a': 'Cloudflare'}, now)
+        self.assertEqual(jl.paused_indexers(self.tmp, ['a'], now + 24 * 3600 + 1), [])  # never more than 24 h
+        jl.record_health(self.tmp, {'a': None}, now)
+        self.assertEqual(jl.paused_indexers(self.tmp, ['a'], now), [])
+
+    def test_failures_far_apart_do_not_pause(self):
+        now = 1000000.0
+        jl.record_health(self.tmp, {'a': 'timeout'}, now)
+        self.assertEqual(jl.record_health(self.tmp, {'a': 'timeout'}, now + 3 * 24 * 3600), [])
+
+    def test_damaged_health_entry_is_ignored(self):
+        with open(os.path.join(self.tmp, 'state.json'), 'w') as f:
+            json.dump({'health': {'a': {'until': 'soon'}, 'b': {'until': 9e12}}}, f)
+        self.assertEqual(jl.paused_indexers(self.tmp, ['a', 'b']), ['b'])
+
+    def test_no_enabled_indexer_shows_a_row(self):
+        self.write({'indexers': {'pubone': {'enabled': False}}, 'all_public': False})
+        rows = []
+        jl.run_search('x', 'all', rows.append, jl.load_config(self.path), self.tmp)
+        self.assertEqual([r['name'] for r in rows], ['[jackettless] (search: x) no indexers enabled: check '
+                                                     '"indexers" and "all_public" in jackettless.json'])
+
+    def test_indexers_removed_from_jackett_are_skipped(self):
+        self.write({'indexers': {'gone': {'enabled': True}, 'pubtwo': {'enabled': True}}, 'all_public': False,
+                    'backoff': False, 'dedup': 'off'})
+        summary = jl.run_search('x', 'all', lambda r: None, jl.load_config(self.path), self.tmp)
+        self.assertEqual(list(summary), ['pubtwo'])  # 'gone' is not upstream and has no custom file
+
+    def test_paused_indexer_is_skipped_but_explicit_search_still_runs(self):
+        cfg = self.cfg('wrong')
+        cfg['backoff'] = True
+        cfg['report_errors'] = 'summary'
+        for _ in range(2):
+            jl.run_search('ubuntu', 'all', lambda r: None, cfg, self.tmp)
+        rows = []
+        summary = jl.run_search('ubuntu', 'all', rows.append, cfg, self.tmp)
+        self.assertEqual(summary, {})
+        self.assertEqual([r['name'] for r in rows],
+                         ['[jackettless] (search: ubuntu) 1 paused after repeated failures'])
+        explicit = jl.run_search('ubuntu', 'all', lambda r: None, cfg, self.tmp, only=['faketracker'])
+        self.assertIn('Bad password', explicit['faketracker'])
+
+
 class OptionTests(FakeTrackerCase):
     def test_new_install_config_defaults(self):
         path = os.path.join(self.tmp, 'new.json')
         jl.load_config(path)
         with open(path, encoding='utf-8') as f:
             written = json.load(f)
-        self.assertEqual(written['report_errors'], 'none')
-        self.assertEqual(written['dedup'], 'off')
+        self.assertEqual(written['indexers'], {})
+        self.assertIs(written['all_public'], True)
+        self.assertEqual(written['report_errors'], 'summary')
+        self.assertEqual(written['dedup'], 'merge')
+        self.assertIs(written['backoff'], True)
 
     def test_invalid_config_shows_warning_row(self):
         path = os.path.join(self.tmp, 'broken.json')
@@ -549,9 +663,11 @@ class OptionTests(FakeTrackerCase):
         self.assertIn("Expecting ','", cfg['_error'])
         self.assertNotIn('char', cfg['_error'])
         cfg['indexers'] = {}
+        cfg['all_public'] = False  # no real searches in tests
         rows = []
         jl.run_search('x', 'all', rows.append, cfg, self.tmp, only=None)
-        self.assertEqual(len(rows), 1)
+        self.assertEqual(len(rows), 2)  # invalid file, then "no indexers enabled" (the list is empty here)
+        self.assertIn('no indexers enabled', rows[1]['name'])
         self.assertTrue(rows[0]['name'].startswith('[jackettless] (search: x) jackettless.json is invalid (Expecting'))
         self.assertEqual(rows[0]['desc_link'], jl.HELP_URL)
         self.assertTrue(rows[0]['link'].endswith(jl.ERROR_MARK))

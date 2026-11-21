@@ -1,32 +1,24 @@
 {
     "indexers": {
-        "thepiratebay": {},
-        "therarbg": {},
-        "limetorrents": {},
-        "yts": {},
-        "nyaasi": {},
-        "torrentdownload": {},
-        "torrentproject2": {},
-
+        "1337x": {
+            "enabled": true,
+            "cookie": "cf_clearance=PASTE_FROM_YOUR_BROWSER",
+            "user_agent": "PASTE_THE_EXACT_USER_AGENT_OF_THAT_BROWSER"
+        },
+        "eztv": { "enabled": false },
+        "nyaasi": { "enabled": true },
+        "thepiratebay": { "enabled": true },
         "torrentleech": {
-            "enabled": false,
+            "enabled": true,
             "username": "YOUR_USERNAME",
             "password": "YOUR_PASSWORD"
         },
-        "bjshare": {
-            "enabled": false,
-            "cookie": "PASTE_THE_COOKIE_HEADER_FROM_YOUR_BROWSER"
-        },
-        "1337x": {
-            "enabled": false,
-            "cookie": "cf_clearance=PASTE_FROM_YOUR_BROWSER",
-            "user_agent": "PASTE_THE_EXACT_USER_AGENT_OF_THAT_BROWSER"
-        }
+        "yts": { "enabled": true }
     },
-    "all_public": false,
-    "thread_count": 10,
-    "timeout": 20,
-    "indexer_timeout": 60,
+    "all_public": true,
+    "thread_count": 20,
+    "timeout": 10,
+    "indexer_timeout": 30,
     "tracker_first": true,
     "definitions_ref": "master",
     "refresh_days": 1,
@@ -34,5 +26,6 @@
     "report_errors": "summary",
     "dedup": "merge",
     "dedup_wait": 8,
+    "backoff": true,
     "verbose": false
 }

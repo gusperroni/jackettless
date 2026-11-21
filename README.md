@@ -1,274 +1,295 @@
 # <img src="icon-128.png" alt="" width="40" align="top"> jackettless
 
-**Search hundreds of torrent sites from qBittorrent, using Jackett's indexer definitions, without running a Jackett
-server.**
+**Search every public site supported by Jackett, straight from qBittorrent, without running a Jackett server.**
 
 [![Tests](https://github.com/gusperroni/jackettless/actions/workflows/tests.yml/badge.svg)](https://github.com/gusperroni/jackettless/actions/workflows/tests.yml)
+[![Latest release](https://img.shields.io/github/v/release/gusperroni/jackettless)](https://github.com/gusperroni/jackettless/releases/latest)
 ![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)
 ![License: GPL-2.0-or-later](https://img.shields.io/badge/license-GPL--2.0--or--later-green)
 
 > [!IMPORTANT]
 > **Disclaimer.** jackettless is a research and educational project about search interoperability. It does not
-> host, index, store or distribute any content: it only runs queries on third-party websites chosen by you, and shows
-> you their results. The author does not encourage or condone piracy or any copyright infringement. You are solely
-> responsible for how you use this software, for complying with the laws of your country, and for respecting the
-> terms of service of the websites you query. The software is provided "as is", without warranty of any kind. Use it
-> at your own risk.
+> host, index, store or distribute any content. It only sends your searches to third-party websites and shows their
+> results. The author does not encourage or condone piracy or any copyright infringement. You are solely responsible
+> for how you use this software, for following the laws of your country, and for respecting the terms of service of
+> the websites you search. The software is provided "as is", without warranty of any kind. Use it at your own risk.
 
-## What it is
+## Contents
 
-[qBittorrent](https://www.qbittorrent.org/) has a built-in search engine that uses small Python plugins, one per
-website. [Jackett](https://github.com/Jackett/Jackett) supports hundreds of websites through a shared library of
-**indexer definitions**: YAML files that describe how to search each site. To use Jackett from qBittorrent, you
-normally keep the Jackett server running in the background and install the official Jackett plugin, which talks to
-that server.
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Settings](#settings)
+  - [Turning indexers on and off](#turning-indexers-on-and-off)
+  - [All settings](#all-settings)
+- [Private trackers](#private-trackers)
+- [Failed and paused indexers](#failed-and-paused-indexers)
+- [Merging duplicates](#merging-duplicates)
+- [Sites protected by Cloudflare](#sites-protected-by-cloudflare)
+- [Sites blocked by your provider's DNS](#sites-blocked-by-your-providers-dns)
+- [Updating](#updating)
+- [Indexer definitions](#indexer-definitions)
+- [Files and privacy](#files-and-privacy)
+- [Troubleshooting](#troubleshooting)
+- [Limitations](#limitations)
+- [Command line and development](#command-line-and-development)
+- [Credits](#credits)
+- [License](#license)
 
-**jackettless reads those same YAML definitions and runs them directly inside the qBittorrent plugin.** There is no
-server and no API key. Python runs only while a search is happening.
+## Quick start
+
+You need qBittorrent with its search engine turned on, and Python 3.9 or newer.
+
+1. In qBittorrent, open **Search → Search plugins… → Install a new one → Web link**.
+2. Paste this link and confirm:
+
+   ```
+   https://raw.githubusercontent.com/gusperroni/jackettless/main/jackettless.py
+   ```
+
+3. Search for something, choosing **Jackettless** (or "All plugins") as the search engine.
+
+That's it. The first search takes a bit longer, because jackettless downloads the indexer definitions from Jackett.
+After that, every search runs on all public indexers at the same time.
+
+## How it works
+
+[Jackett](https://github.com/Jackett/Jackett) supports hundreds of torrent sites through **indexer definitions**:
+small files that describe how to search each site. Normally, you run the Jackett server all the time, and
+qBittorrent's Jackett plugin talks to it.
+
+jackettless reads the same definitions and runs them **inside the qBittorrent plugin itself**:
 
 ```
-Jackett + official plugin:   qBittorrent → plugin → Jackett server (always running) → websites
-jackettless:                 qBittorrent → jackettless plugin → websites
+With Jackett:      qBittorrent → plugin → Jackett server (always running) → sites
+With jackettless:  qBittorrent → jackettless → sites
 ```
 
-## Features
+There is no server, no API key and nothing running in the background. The plugin only runs while you search.
 
-- **One file, no dependencies.** It uses only the Python standard library, as qBittorrent requires.
-- **Jackett's indexer library.** Definitions are downloaded from the Jackett repository on demand, cached, and kept
-  up to date automatically. You get the fixes that the Jackett community makes to them.
-- **Public and private trackers.** Login by form, POST, GET or cookie. The plugin keeps the session and logs in again
-  when it expires.
-- **Fast, parallel searches.** All your indexers are searched at the same time, and results appear as they arrive.
-- **Optional duplicate merging.** The same torrent found on several sites becomes one row, with the trackers of every
-  copy in its magnet link.
-- **Works around common blocks.** It can fall back to DNS-over-HTTPS when your provider blocks a site by DNS. You can
-  also reuse your browser's Cloudflare clearance cookie on some sites.
-- **Clear errors.** It can optionally show which indexers failed, and why, as rows in the results list.
+Out of the box, jackettless:
 
-## Requirements
+- searches **every public indexer** from Jackett, about 80 sites;
+- shows **one row listing the indexers that failed**, and why;
+- **merges duplicates**: the same torrent found on several sites becomes one row;
+- **pauses indexers that keep failing**, so searches stay fast.
 
-- qBittorrent with its search engine enabled. qBittorrent 5.x was tested.
-- Python 3.9 or newer, the same Python that qBittorrent's search engine uses.
+## Settings
 
-## Installation
+Settings live in `jackettless.json`, next to the plugin. jackettless creates the file on the first search:
 
-1. Download [`jackettless.py`](https://raw.githubusercontent.com/gusperroni/jackettless/main/jackettless.py).
-2. In qBittorrent, open the **Search** tab → **Search plugins…** → **Install a new one** → **Local file**, and select
-   `jackettless.py`.
-3. Run any search. On the first search, jackettless creates its settings file, `jackettless.json`, next to the plugin.
-   The file starts with a few public indexers enabled:
+| System | Folder |
+|---|---|
+| Windows | `%LOCALAPPDATA%\qBittorrent\nova3\engines\` |
+| Linux | `~/.local/share/qBittorrent/nova3/engines/` |
+| macOS | `~/Library/Application Support/qBittorrent/nova3/engines/` |
 
-   | System | Folder |
-   |---|---|
-   | Windows | `%LOCALAPPDATA%\qBittorrent\nova3\engines\` |
-   | Linux | `~/.local/share/qBittorrent/nova3/engines/` |
-   | macOS | `~/Library/Application Support/qBittorrent/nova3/engines/` |
+Changes apply on the next search; there is no need to restart qBittorrent. Settings you leave out use their
+default value. If the file has a mistake, such as a missing comma, jackettless uses the defaults and shows a row
+like `[jackettless] (search: ubuntu) jackettless.json is invalid (...), default settings in use`.
 
-4. Edit `jackettless.json` to choose your indexers and options, then search again. There is no need to restart
-   qBittorrent after editing the settings file.
+### Turning indexers on and off
 
-## Configuration
-
-All settings live in `jackettless.json`. A complete example is in
-[`jackettless.example.json`](jackettless.example.json).
+After the first search, the `indexers` section lists every public indexer:
 
 ```json
-{
-    "indexers": {
-        "thepiratebay": {},
-        "nyaasi": {},
-        "torrentleech": { "username": "me", "password": "secret" }
-    },
-    "dedup": "merge",
-    "report_errors": "summary"
+"indexers": {
+    "1337x": { "enabled": true },
+    "nyaasi": { "enabled": true },
+    "thepiratebay": { "enabled": true },
+    "yts": { "enabled": true }
 }
 ```
 
-Any setting missing from the file uses its default, so you only need to write what you want to change. If the file is
-not valid JSON, for example because a comma is missing, jackettless uses the default settings. It then shows a row
-like `[jackettless] (search: ubuntu) jackettless.json is invalid (Expecting ',' delimiter: line 26 column 5), default
-settings in use`
-at the top of the results.
+- **To stop using a site**, change its `true` to `false`.
+- **New public sites** that Jackett adds later appear in the list by themselves.
+- **To search only a few sites**, set `"all_public": false` and keep only those sites in the list (or set the others
+  to `false`).
+- **Sites that Jackett removes** are skipped; you can delete their lines.
+- **To add a private tracker**, add it with your account. See [Private trackers](#private-trackers).
 
-### Choosing indexers
-
-Each key in `indexers` is the **id** of a Jackett indexer. The id is the file name of its definition, without `.yml`,
-in [Jackett's Definitions folder](https://github.com/Jackett/Jackett/tree/master/src/Jackett.Common/Definitions).
-For example, `thepiratebay.yml` has the id `thepiratebay`.
-
-Each value holds that indexer's settings, and `{}` means the defaults. These settings work for every indexer:
+Every indexer also accepts these settings:
 
 | setting | what it does |
 |---|---|
-| `enabled` | `false` turns the indexer off without removing its settings. |
-| `username`, `password` | Your account on a private tracker. |
-| `cookie` | Cookies copied from your browser. Used for trackers that log in with a cookie or that show a captcha, and for Cloudflare clearance. |
-| `user_agent` | Replaces the User-Agent sent to this indexer. |
-| `sitelink` | Forces a specific domain or mirror of the site. |
+| `enabled` | `false` turns the indexer off and keeps its other settings. |
+| `username`, `password` | Your account, for private trackers. |
+| `cookie` | Cookies copied from your browser. See [Private trackers](#private-trackers) and [Cloudflare](#sites-protected-by-cloudflare). |
+| `user_agent` | The User-Agent sent to this site. |
+| `sitelink` | A specific address (mirror) for the site. |
 
-An indexer also accepts the options from its definition's `settings` section, the same options Jackett shows on
-its configuration screen. Examples are `sort`, `type` and `freeleech`.
+An indexer also accepts the options of its definition, the same ones Jackett shows on its settings screen, such as
+`sort` or `freeleech`.
 
-### General settings
+### All settings
 
 | setting | default | what it does |
 |---|---|---|
-| `all_public` | `false` | Also searches **every** public Jackett indexer. The first search then downloads all definitions, which takes a while. |
-| `thread_count` | `10` | How many indexers are searched at the same time. |
-| `timeout` | `20` | Timeout of each web request, in seconds. |
-| `indexer_timeout` | `60` | Maximum time for one indexer during a search, in seconds. |
-| `tracker_first` | `true` | Starts each result name with the site, e.g. `[The Pirate Bay] Ubuntu 24.04`. |
-| `dedup` | `"off"` | `"merge"` combines duplicate results. See [Merging duplicates](#merging-duplicates). |
-| `dedup_wait` | `8` | With `"merge"`: seconds to wait before showing merged results. |
-| `report_errors` | `"none"` | Shows failed indexers as result rows: `"none"`, `"summary"` (one row) or `"all"` (one row per failure). |
-| `dns_over_https` | `null` | e.g. `"https://1.1.1.1/dns-query"`. See [Blocked by your provider's DNS](#blocked-by-your-providers-dns). |
-| `refresh_days` | `1` | How often to check for updated definitions, in days. |
-| `definitions_ref` | `"master"` | Jackett branch, tag or commit to download definitions from. |
-| `verbose` | `false` | Detailed log output, useful when running from the command line. Without it, only real problems reach qBittorrent's log. |
+| `all_public` | `true` | Keep the `indexers` list filled with every public Jackett indexer, including new ones. With `false`, no new sites are added; the ones already listed still run until you set them to `false`. |
+| `report_errors` | `"summary"` | Show failed indexers as a result row: `"summary"` (one row), `"all"` (one row per indexer) or `"none"`. |
+| `dedup` | `"merge"` | Merge duplicate results into one row. `"off"` shows every copy. |
+| `dedup_wait` | `8` | Seconds to wait before showing merged results. |
+| `backoff` | `true` | Pause indexers that keep failing. See [Failed and paused indexers](#failed-and-paused-indexers). |
+| `thread_count` | `20` | How many indexers are searched at the same time. |
+| `indexer_timeout` | `30` | Maximum seconds one indexer can take in a search. |
+| `timeout` | `10` | Maximum seconds for each web request. |
+| `tracker_first` | `true` | Start each result name with its site, e.g. `[The Pirate Bay] Ubuntu 24.04`. |
+| `dns_over_https` | `null` | See [Sites blocked by your provider's DNS](#sites-blocked-by-your-providers-dns). |
+| `refresh_days` | `1` | How often, in days, to check Jackett for updated definitions. |
+| `definitions_ref` | `"master"` | Jackett branch, tag or commit to take definitions from. |
+| `verbose` | `false` | Write a detailed log. Useful from the [command line](#command-line-and-development). |
+
+A full example is in [`jackettless.example.json`](jackettless.example.json).
 
 ## Private trackers
 
-Add the tracker's id with your credentials:
+Private trackers are never added automatically, because they need your account. Add one with its id and your login:
 
 ```json
 "torrentleech": { "username": "me", "password": "secret" }
 ```
 
-jackettless logs in the first time you search and saves the session cookies, and it logs in again when they expire.
-Downloads of `.torrent` files from private trackers go through the plugin, so your session is used.
+jackettless logs in, keeps the session, and logs in again when it expires.
 
-Some trackers show a **captcha** on their login page, or only support logging in with a cookie. For those:
+If the site shows a **captcha** on its login page, use a cookie instead:
 
-1. Log in with your browser. If the site offers "remember me", tick it.
-2. Press F12, open the **Network** tab, and reload the page.
-3. Click the first request. In **Request Headers**, copy the whole value of `cookie:`.
-4. Paste it as the indexer's `cookie` setting.
+1. Log in with your browser. If there is a "remember me" option, tick it.
+2. Press **F12**, open the **Network** tab and reload the page.
+3. Click the first request. Under **Request Headers**, copy the whole `cookie:` value.
+4. Paste it as the indexer's `cookie`.
 
 > [!WARNING]
-> Passwords and cookies are stored in plain text in `jackettless.json` and in the `jackettless_data` folder, just like
-> the official Jackett plugin stores its settings. Keep that folder private, and never share these files.
+> Passwords and cookies are saved as plain text in `jackettless.json` and in the `jackettless_data` folder, like the
+> official Jackett plugin does. Keep that folder private, and never share these files.
+
+## Failed and paused indexers
+
+Some sites are down, slow or blocked at any given time. After each search, jackettless adds one row that says which
+indexers failed, and why:
+
+```
+[jackettless] (search: ubuntu) 3 of 60 indexers failed: 1337x (Cloudflare), example (timeout), other (DNS blocked/failed); 12 paused after repeated failures
+```
+
+- **Paused indexers.** When an indexer fails twice in a row, jackettless skips it for 1 hour. If it keeps failing,
+  the pause grows to 6 hours and then 24 hours. One successful search brings it back to normal, and failures more
+  than two days apart don't count as "in a row".
+- **What each reason means**, and what you can do, is in [Troubleshooting](#troubleshooting).
+- The row is a message, not a torrent. It contains your search words, so qBittorrent's name filter doesn't hide it.
+
+To change this, use `"report_errors": "all"` (one row per failure), `"none"` (no rows) or `"backoff": false` (never
+pause).
 
 ## Merging duplicates
 
-The same torrent often appears on several sites. With `"dedup": "merge"`, results that share the same **infohash**
-(the torrent's unique id) become one row:
+The same torrent often appears on several sites. jackettless shows it once, with every site in the name:
 
 ```
 [The Pirate Bay, YTS] Big Buck Bunny (2008) [1080p]
 ```
 
-- The row's magnet link includes the trackers of every copy.
-- Seeds and leechers show the highest value among the copies. They are counts of the same swarm, so they are not
-  added up.
+- The magnet link includes the trackers of every copy.
+- Seeds and leechers show the highest value among the copies.
+- Results are held for up to 8 seconds (`dedup_wait`) so they can be merged.
+- Private trackers and sites that don't show the torrent's hash in their listings are never merged.
 
-qBittorrent cannot change a row after it is shown. So when merging is on, results are held for up to `dedup_wait`
-seconds (default 8) and then shown already merged. A copy that arrives later than that is dropped if its torrent is
-already on screen.
-
-Some results are never merged:
-
-- Results from private trackers, because their links contain your personal key.
-- Results from sites that don't publish the infohash in their listings, such as 1337x and LimeTorrents.
+To see every copy separately, set `"dedup": "off"`.
 
 ## Sites protected by Cloudflare
 
-Some sites ask every visitor to pass a browser check from Cloudflare first. jackettless cannot solve that check, so
-the indexer fails with the reason `Cloudflare`. Jackett handles these sites with FlareSolverr, which is an extra
-service.
+Some sites make every visitor pass a browser check. jackettless can't do that, so these indexers fail with the
+reason `Cloudflare`. Jackett needs an extra service, FlareSolverr, for the same sites.
 
-On some sites, you can reuse the clearance your own browser already obtained:
+On some of them, you can reuse the check your own browser already passed:
 
-1. Open the site in your browser and wait until the page loads normally.
-2. Press F12, open the **Network** tab, reload the page and click the first request.
-3. In **Request Headers**, copy the `cf_clearance=...` part of `cookie:`, and the whole `user-agent:` value.
+1. Open the site in your browser and wait until it loads.
+2. Press **F12**, open the **Network** tab, reload, and click the first request.
+3. Under **Request Headers**, copy the `cf_clearance=...` part of `cookie:`, and the whole `user-agent:` value.
 4. Add both to the indexer:
 
    ```json
    "1337x": {
+       "enabled": true,
        "cookie": "cf_clearance=PASTE_HERE",
-       "user_agent": "Mozilla/5.0 ... PASTE THE EXACT VALUE"
+       "user_agent": "PASTE THE EXACT USER-AGENT HERE"
    }
    ```
 
-The clearance only works:
+This only works from the same internet connection and with the exact same User-Agent, and it expires after hours
+or days. Some sites, such as EZTV, check more than that, and it doesn't work there at all.
 
-- from the same internet connection (IP address), and with exactly the same User-Agent;
-- until it expires, after hours or days. When the indexer fails again with `Cloudflare`, repeat the steps.
+## Sites blocked by your provider's DNS
 
-Some sites also check details of the connection itself that a browser has and Python can't imitate. On those sites
-this workaround does not work at all. EZTV is one example at the time of writing.
-
-## Blocked by your provider's DNS
-
-Some internet providers block torrent sites by making their names fail to resolve. The indexer then fails with
-`DNS blocked/failed`. Set:
+Some internet providers block torrent sites by DNS. Those indexers fail with `DNS blocked/failed`. If you don't use
+a DNS service that avoids this (for example dnscrypt-proxy, or secure DNS set up on your system), add:
 
 ```json
 "dns_over_https": "https://1.1.1.1/dns-query"
 ```
 
-jackettless then asks that DNS-over-HTTPS server for the address, but **only when the normal lookup fails**. The
-connection to the site itself is unchanged: HTTPS certificates are still verified against the real site name. Any
-DNS-over-HTTPS server with a JSON API works, for example `https://dns.google/resolve`.
+jackettless then looks up the site address through that service, **only when the normal lookup fails**. Connections
+are still checked against the real site name.
 
-## Seeing which indexers failed
+## Updating
 
-By default, a failed indexer is skipped silently. To see failures inside qBittorrent, set `"report_errors"`:
+qBittorrent's **Check for updates** button only updates the **official** plugins. jackettless is unofficial, so:
 
-- `"summary"`: one row, e.g. `[jackettless] (search: ubuntu) 2 of 8 indexers failed: 1337x (Cloudflare), eztv (DNS
-  blocked/failed)`.
-- `"all"`: one row per failed indexer.
+- **To update**, install it again by **Web link** (see [Quick start](#quick-start)). Your settings are kept.
+- **To know when there is a new version**, click **Watch → Custom → Releases** at the top of this page.
+- **Indexer definitions** update by themselves, once a day.
 
-These rows are messages, not torrents: opening them does nothing, and **Open description page** leads to
-[Troubleshooting](#troubleshooting). They include your search words, because qBittorrent hides rows whose name
-doesn't contain them when its "Torrent names only" filter is on (the default).
+To **uninstall**, remove it in qBittorrent's **Search plugins…** window, then delete `jackettless.json` and the
+`jackettless_data` folder.
 
-## Files, network access and privacy
+## Indexer definitions
 
-**Files.** jackettless keeps everything next to the plugin, in qBittorrent's `engines` folder:
+jackettless doesn't include any site. It downloads [Jackett's definitions](https://github.com/Jackett/Jackett/tree/master/src/Jackett.Common/Definitions)
+and keeps them up to date.
+
+- **Find a site's id.** Every `.yml` file in that folder is a site jackettless can use. The id is the file name
+  without `.yml`. For example, `kickasstorrents-ws.yml` is `"kickasstorrents-ws"`. The `type:` line at the top says
+  whether it is `public`, `semi-private` or `private`.
+- **Use your own definition.** Put a `.yml` file in `jackettless_data/custom/` and add its id to `indexers`. A file
+  there replaces Jackett's definition with the same id.
+- **Report a broken site to the right place.** If a site's results or login are wrong in Jackett too, the definition
+  is what needs fixing: report it to Jackett. If it works in Jackett but not in jackettless, please open an issue
+  here.
+
+## Files and privacy
+
+Everything is kept next to the plugin, in qBittorrent's `engines` folder:
 
 | path | contents |
 |---|---|
-| `jackettless.json` | Your settings, including any credentials. |
-| `jackettless_data/definitions/` | The cached indexer definitions. |
-| `jackettless_data/custom/` | Your own `.yml` definitions, if you write any. A definition here takes priority over Jackett's definition with the same id. |
+| `jackettless.json` | Your settings, including any passwords or cookies. |
+| `jackettless_data/definitions/` | The downloaded definitions. |
+| `jackettless_data/custom/` | Your own definitions. |
 | `jackettless_data/cookies/` | Login sessions of private trackers. |
-| `jackettless_data/state.json` | Which mirror of each site worked last. |
+| `jackettless_data/state.json` | Working mirrors and paused indexers. |
 
-**Network.** Apart from the sites you search, jackettless only contacts:
+Besides the sites you search, jackettless only connects to:
 
-- **GitHub**, to download and update definitions: at most once a day, and only the files that changed.
-- **The DNS-over-HTTPS server you configured**, only if you set one, and only when a normal DNS lookup fails.
+- **GitHub**, to download definitions, at most once a day;
+- **your DNS-over-HTTPS server**, only if you set one, and only when a normal lookup fails.
 
-Nothing is collected or sent anywhere else.
-
-**Trust.** Definitions are data, not code: a definition can't make jackettless run programs on your computer.
-Your cookies are only sent to the indexer's own site, never to other domains. Self-signed certificates are only
-accepted when their fingerprint is listed in the indexer's definition, as Jackett does.
-
-## Updating and uninstalling
-
-- **Update the plugin:** install the new `jackettless.py` the same way, and qBittorrent replaces the old one. Your
-  `jackettless.json` and `jackettless_data` are kept.
-- **Indexer definitions** update by themselves.
-- **Uninstall:** remove the plugin in qBittorrent's **Search plugins…** window. Then delete `jackettless.json` and
-  `jackettless_data` from the `engines` folder.
+Nothing else is collected or sent. Definitions are data, not code: they can't run programs on your computer. Your
+cookies are only sent to the site they belong to.
 
 ## Troubleshooting
 
-| symptom | what to do |
+| you see | what to do |
 |---|---|
-| No results at all | Set `"report_errors": "summary"` and search again to see which indexers fail and why. |
-| qBittorrent's log (View → Log) shows `Error occurred in search engine ... [jackettless] 2 of 8 indexers failed: ...` | qBittorrent logs any message from a plugin as a warning, even when the search worked. jackettless writes one such line per search, only when indexers fail; the reason of each one is in parentheses. |
-| `Cloudflare` | The site requires a browser check. See [Sites protected by Cloudflare](#sites-protected-by-cloudflare). |
-| `DNS blocked/failed` | See [Blocked by your provider's DNS](#blocked-by-your-providers-dns). |
-| `timeout` | The site is slow or down. Increase `indexer_timeout`, or try again later. |
-| Login errors | Check `username`/`password`. If the site uses a captcha, use `cookie` instead. |
-| `definition "x" not available` | The id is wrong, or the indexer was removed from Jackett. Check it against [Jackett's Definitions folder](https://github.com/Jackett/Jackett/tree/master/src/Jackett.Common/Definitions). |
-| `jackettless.json is invalid` | The file has a JSON syntax error. The row shows the line and column. |
+| `Cloudflare` | The site requires a browser check. See [Sites protected by Cloudflare](#sites-protected-by-cloudflare), or turn the indexer off. |
+| `DNS blocked/failed` | See [Sites blocked by your provider's DNS](#sites-blocked-by-your-providers-dns). |
+| `timeout` | The site is slow or down. It is paused automatically if it keeps failing. |
+| `network error` | The site could not be reached. Try again later. |
+| a login message | Check `username` / `password`, or use a `cookie`. |
+| `definition "x" not available` | The id is wrong, or Jackett removed that site. See [Indexer definitions](#indexer-definitions). |
+| `jackettless.json is invalid` | The file has a mistake. The row shows the line and column. |
+| `no indexers enabled` | Every site is set to `false`, or the list is empty with `"all_public": false`. |
+| `Error occurred in search engine` in qBittorrent's log | qBittorrent logs every plugin message there, even when the search worked. jackettless only writes one line when indexers fail. |
+| The first search is slow | jackettless is downloading the definitions. Later searches are faster. |
 
-You can also run a search from a terminal, which prints a detailed log of every request. Run it from the
-`nova3/engines` folder:
+For a detailed log of one site, run this in the `engines` folder:
 
 ```bash
 python jackettless.py -v search "ubuntu" --indexer thepiratebay
@@ -276,81 +297,51 @@ python jackettless.py -v search "ubuntu" --indexer thepiratebay
 
 ## Limitations
 
-- **Only YAML indexers.** About 60 of Jackett's indexers are written in C# instead of YAML, and jackettless can't run
-  them. Some of them, such as AudioBookBay and TorrentsCSV, have their own qBittorrent plugins.
-- **Cloudflare.** Sites that require a browser check only work with the manual workaround above, and not all of them.
-- **Keyword search only.** qBittorrent sends keywords and a category. Searches by IMDb id, season or episode are not
+- **Only YAML definitions.** About 60 of Jackett's sites are written in C# instead, and jackettless can't run them.
+  Some of them, such as AudioBookBay and TorrentsCSV, have their own qBittorrent plugins.
+- **Cloudflare.** Sites with a browser check only work with the cookie workaround, and not all of them.
+- **Keywords only.** qBittorrent sends words and a category. Searches by IMDb id, season or episode aren't
   available.
-- **3-minute limit.** qBittorrent stops any search after 3 minutes and keeps the results shown so far. jackettless
-  limits each indexer to `indexer_timeout`, 60 seconds by default, so it stays well within that limit.
-- **No settings screen.** qBittorrent plugins have no settings UI, so everything is configured in
-  `jackettless.json`.
-- **A re-implementation.** Jackett's definition engine was ported to Python. Rare definitions may behave differently
-  than in Jackett. Please report them.
+- **3-minute limit.** qBittorrent stops a search after 3 minutes and keeps the results shown so far. jackettless
+  gives each site at most `indexer_timeout` seconds, so searches end well before that.
+- **No settings screen.** qBittorrent plugins have no settings window, so settings live in `jackettless.json`.
+- **A port of Jackett's engine.** A few definitions may behave differently than in Jackett. Please report them.
 
-## Command line
+## Command line and development
 
-The plugin also works from a terminal, which is useful for testing:
+The plugin also runs from a terminal, from the `engines` folder:
 
-```bash
-python jackettless.py search "ubuntu" --cat software --indexer thepiratebay --json
-```
+| command | what it does |
+|---|---|
+| `python jackettless.py search "ubuntu"` | Search, like qBittorrent does. Add `--indexer ID` to search only one site (even a paused one), `--json` for JSON output and `-v` for a detailed log. |
+| `python jackettless.py list --type public` | List the downloaded definitions. |
+| `python jackettless.py sync --all` | Download or update every definition. |
+| `python jackettless.py login ID` | Test a private tracker login and save the session. |
 
-```bash
-python jackettless.py list --type public
-```
-
-```bash
-python jackettless.py sync --all
-```
-
-```bash
-python jackettless.py login torrentleech
-```
-
-The commands:
-
-- `search` runs a search.
-- `list` shows the cached definitions.
-- `sync` downloads or updates definitions.
-- `login` tests a private tracker login and saves the session.
-
-Add `--config` and `--data` to use another settings file and data folder.
-
-You can also test the plugin through qBittorrent's own search runner, from the `nova3` folder:
-
-```bash
-python nova2.py jackettless all ubuntu
-```
-
-## Development
-
-The tests use only the standard library and a local fake tracker, so they don't need internet access:
+The tests use only the standard library and a fake local tracker, so they run without internet access:
 
 ```bash
 python -m unittest discover -s tests
 ```
 
-`tools/coverage.py` downloads all of Jackett's definitions and checks which features they use that jackettless does
-not support. With `--live`, it also runs real searches on every public indexer:
+Two tools help with development:
 
-```bash
-python tools/coverage.py --live
-```
+- `tools/coverage.py` checks which Jackett definitions jackettless supports. With `--live`, it also searches every
+  public site.
+- `tools/benchmark.py` measures search speed with different `thread_count` and timeout values.
 
-Bug reports and pull requests are welcome. If a definition doesn't work, please include the indexer id and the
-output of the command-line search with `-v`.
+Bug reports and pull requests are welcome. For a broken site, please include its id and the output of the `-v`
+command above.
 
 ## Credits
 
-jackettless only exists because of the work of these projects and their communities:
+jackettless exists thanks to these projects and their communities:
 
-- **[Jackett](https://github.com/Jackett/Jackett)** and its contributors. The Cardigann engine that jackettless
-  ports to Python comes from Jackett, and so does the library of indexer definitions. Keeping hundreds of
-  definitions working as websites change is a huge, ongoing community effort, and every search jackettless runs is
-  built on it. If jackettless is useful to you, please consider supporting Jackett.
-- **[Cardigann](https://github.com/cardigann/cardigann)** and its contributors, who created the YAML definition
-  format that Jackett adopted.
+- **[Jackett](https://github.com/Jackett/Jackett)** and its contributors. jackettless is a port of Jackett's
+  Cardigann engine, and every search it runs uses the indexer definitions that the Jackett community writes and
+  keeps working as sites change. If jackettless is useful to you, please consider supporting Jackett.
+- **[Cardigann](https://github.com/cardigann/cardigann)** and its contributors, who created the definition format
+  that Jackett adopted.
 - **[qBittorrent](https://github.com/qbittorrent/qBittorrent)** and
   **[qbittorrent/search-plugins](https://github.com/qbittorrent/search-plugins)**, for the search engine, the plugin
   API and the official Jackett plugin that inspired this one.
@@ -361,9 +352,6 @@ jackettless is not affiliated with or endorsed by any of these projects.
 
 ## License
 
-jackettless is free software, licensed under the
-[GNU General Public License v2.0 or later](LICENSE) (GPL-2.0-or-later).
-
-Because it is a port of Jackett's Cardigann engine, it keeps a license compatible with Jackett's (GPL-2.0). The
-indexer definitions are not part of this repository: they are downloaded at runtime from Jackett, under Jackett's
-license.
+jackettless is free software under the [GNU General Public License v2.0 or later](LICENSE). As a port of Jackett's
+Cardigann engine, it keeps a license compatible with Jackett's (GPL-2.0). The indexer definitions are not part of
+this repository: they are downloaded from Jackett, under Jackett's license.
